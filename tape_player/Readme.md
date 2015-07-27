@@ -21,4 +21,4 @@ Hardware
 Software
 ========
 
-TBD
+tape_player.py -> experimenting I2C communication from the laptop (using VGA connector I2C interface ;) )
