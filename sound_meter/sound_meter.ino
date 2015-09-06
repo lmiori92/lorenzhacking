@@ -1,3 +1,10 @@
+//#define LOG_OUT 1 // use the log output function
+#define LIN_OUT8 1
+#define FFT_N 256 // set to 256 point fft
+
+#include <FFT.h>
+//#include <ffft.h>
+
 /*
 
     Sound Pressul Level Meter
@@ -55,6 +62,26 @@ The principle behind these numbers is the following:
 const uint8_t LED_DUTY_TABLE[NUM_YELLOW_LED] = { 60, 75, 90, 101, 113, 124, 136, 147, 164, 173, 185, 200 };  /**< Lookup table for the duty cycles */
 const uint8_t EXTRA_LED_PINS[NUM_RED_LED] = { 2, 3, 4, 6, 7 };                                                /**< Assigned pins for the extra LEDs */
 
+/* ADC constants */
+
+/* Different ADC prescaler values - suggested not to go above 1MHz */
+const unsigned char PS_16 = (1 << ADPS2);                  //@16 MHz -> 1MHz
+const unsigned char PS_32 = (1 << ADPS2) | (1 << ADPS0);   //@16 MHz -> 500khz
+const unsigned char PS_64 = (1 << ADPS2) | (1 << ADPS1);   //@16 MHz -> 250khz
+const unsigned char PS_128 = (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);  // @16MHz -> 125khz
+
+/* FFT Data */
+//int16_t capture[FFT_N];			/* Wave captureing buffer */
+//complex_t bfly_buff[FFT_N];		/* FFT buffer */
+//uint16_t spektrum[FFT_N/2];		/* Spectrum output buffer */
+
+/* APP constants */
+enum
+{
+    STATE_PREOPERATIONAL,
+    STATE_OPERATIONAL
+};
+
 void set_extra_led(uint8_t num)
 {
     uint8_t i = 0;
@@ -90,7 +117,10 @@ void set_led(uint8_t level)
 
     /* set the correct duty cycle */
     /* analogWrite(5, DUTY_OFFSET-DUTY_PER_DOT + (DUTY_PER_DOT * level)); */
-    analogWrite(5, LED_DUTY_TABLE[level - 1]);
+    if (level > 0)
+        analogWrite(5, LED_DUTY_TABLE[level - 1]);
+    else
+        analogWrite(5, 0);
 
 }
 
@@ -103,6 +133,101 @@ void set_level(uint8_t level)
   /* set the level if > LED_DRIVER_DOTS also to the red LEDs (internally clips after) */
   set_extra_led(level > NUM_YELLOW_LED ? level - NUM_YELLOW_LED : 0);
   
+}
+
+volatile int samples = 0;
+uint16_t analogVal = 0;
+int k;
+/* ADC: conversion complete interrupt routine */
+ISR(ADC_vect)
+{
+
+  if (samples == (FFT_N*2))
+  {
+    // wait for the app to process the data
+    goto adc_return;
+  }
+  
+  /* ADC channel that has completed the reading */
+  //adcChan = ADMUX & ((1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0));
+  /* ADC input value (0 - 1024) */
+  analogVal = ADCL | (ADCH << 8);
+
+  k = analogVal; // form into an int
+  k -= 0x0200; // form into a signed int
+  k <<= 6; // form into a 16b signed int
+  fft_input[samples] = k; // put real data into even bins
+  fft_input[samples+1] = 0; // set odd bins to 0 
+
+  samples += 2;
+
+/* Yes, guys, back in the 80's the goto statement was in fashion ! */
+adc_return:
+
+  /* Set ADSC in ADCSRA (0x7A) to start another ADC conversion */
+  ADCSRA |= (1 << ADSC);
+
+}
+
+void adc_setup()
+{
+    /* disable interrupts */
+    cli();
+
+    /* set up the ADC */
+    ADCSRA &= ~PS_128;  /* remove bits set by Arduino library */
+
+    /* set the prescaler */
+    ADCSRA |= PS_64;
+
+    /* clear ADLAR in ADMUX (0x7C) to right-adjust the result */
+    /* ADCL will contain lower 8 bits, ADCH upper 2 (in last two bits) */
+    ADMUX &= B11011111;
+
+    /* Set REFS1..0 in ADMUX (0x7C) to change reference voltage to the internal 1.1V reference */
+    ADMUX |= B11000000;
+
+    /* Clear MUX3..0 in ADMUX (0x7C) in preparation for setting the analog channel */
+    ADMUX &= B11110000;
+
+    /* Set MUX3..0 in ADMUX (0x7C) to read from AD0
+       Do not set above 15! You will overrun other parts of ADMUX. A full
+       list of possible inputs is available in Table 24-4 of the ATMega328
+       datasheet
+    */
+    ADMUX |= 0; /* it will be dynamically changed later */
+
+    // Set ADEN in ADCSRA (0x7A) to enable the ADC.
+    // Note, this instruction takes 12 ADC clocks to execute
+    ADCSRA |= B10000000;
+
+    // un-set ADATE in ADCSRA (0x7A) to disable auto-triggering.
+    ADCSRA &= ~B00100000;
+ 
+    // Clear ADTS2..0 in ADCSRB (0x7B) to set trigger mode to free running.
+    // This means that as soon as an ADC has finished, the next will be
+    // immediately started.
+    ADCSRB &= B11111000;
+
+    // Set the Prescaler to 64 (16000KHz/64 = 250KHz (that is a sampling freq of ~19khz)
+    ADCSRA |= PS_64;
+
+    // Set ADIE in ADCSRA (0x7A) to enable the ADC interrupt.
+    // Without this, the internal interrupt will not trigger.
+    ADCSRA |= B00001000;
+
+    /* re-enable ISR */
+    sei();
+
+}
+
+// only for test (perhaps?, at least it shall be disabled if not needed)
+
+void establishContact() {
+ while (Serial.available() <= 0) {
+      Serial.write('A');   // send a capital A
+      delay(300);
+  }
 }
 
 /* APP: initialization of subsystems */
@@ -123,16 +248,69 @@ void setup()
     {
         pinMode(EXTRA_LED_PINS[i], OUTPUT);
     }
+    
+    /* ADC Setup */
+    adc_setup();
+    
+    /* Kickstart the first conversion */
+    ADCSRA |= (1 << ADSC);
 
 }
 
 /* APP: main loop */
-bool toggle;
-int i = 0;
 void loop()
 {
-  delay(100);
-  set_level(i%18);
-  i++;
-  toggle ^= 1;
+
+  static uint8_t app_state = STATE_PREOPERATIONAL;
+  static int i = 0;
+
+  switch(app_state)
+  {
+
+    case STATE_PREOPERATIONAL:
+
+      /* At startup do a operational LED test */
+      set_level(i);
+      i++;
+      delay(100);
+
+      if (i > 17)
+      {
+          app_state = STATE_OPERATIONAL;
+      }
+      
+      /* Serial */
+        Serial.begin(57600);
+      establishContact();
+
+      break;
+    case STATE_OPERATIONAL:
+    
+      int k;
+      if (samples == (FFT_N*2))
+      {
+    
+        fft_window(); // window the data for better frequency response
+        fft_reorder(); // reorder the data before doing the fft
+        fft_run(); // process the data in the fft
+        //fft_mag_log(); // take the output of the fft
+        fft_mag_lin8();
+        /* reset samples and restart the process */
+        
+        for (byte i = 0; i < FFT_N/2; i++)
+        {
+          //Serial.write((uint8_t)((fft_lin_out[i] / 65534.0f) * 255.0f));
+          Serial.write(fft_lin_out8[i]);
+        }
+//        Serial.println(samples, DEC);
+        //set_led(spektrum[52]/4);
+    
+        samples = 0;
+    
+      }
+    
+      break;
+
+  }
+  
 }
