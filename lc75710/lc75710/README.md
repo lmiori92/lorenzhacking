@@ -11,7 +11,9 @@ Installation
 The library is installed as usual by copying its contents in the
 $HOME/Arduino/libraries folder.
 If you are lazy enough and you trust my install.sh Bash script, then:
+
 $ ./install
+
 is enough to install it.
 
 Version
