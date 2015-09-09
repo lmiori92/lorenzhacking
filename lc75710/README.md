@@ -12,8 +12,8 @@ Getting started - the result!
 The library is capable of driving a VFD display like shown below.
 
 
-![datasheet](lc75710/doc/images/lc75710_hacked_display.jpg?raw=true "lc75710_hacked_display.jpg")
-![datasheet](lc75710/doc/images/lc75710_fft_display.avi?raw=true "lc75710_fft_display.avi")
+![datasheet](doc/images/lc75710_hacked_display.jpg?raw=true "lc75710_hacked_display.jpg")
+![datasheet](doc/images/lc75710_fft_display.avi?raw=true "lc75710_fft_display.avi")
 
 Documentation - library
 =======================
@@ -28,7 +28,7 @@ Documentation - datasheet
 For your convenience, the doc folder holds a copy of the datasheet of the
 LC757(10/11/12/13)
 
-![datasheet](/doc/datasheet/lc75710ne.pdf?raw=true "LC75710 Datasheet")
+![datasheet](doc/datasheet/lc75710ne.pdf?raw=true "LC75710 Datasheet")
 
 Installation
 ============
