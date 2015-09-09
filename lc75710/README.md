@@ -6,6 +6,15 @@ It is common to find this sort of ICs in old electronics, as I did!
 Moreover, VDF displays are pretty nice so why not writing down a simple
 and bare library to handle the communication and the low-level commands.
 
+Getting started - the result!
+=============================
+
+The library is capable of driving a VFD display like shown below.
+
+
+![datasheet](lc75710/doc/images/lc75710_hacked_display.jpg?raw=true "lc75710_hacked_display.jpg")
+![datasheet](lc75710/doc/images/lc75710_fft_display.avi?raw=true "lc75710_fft_display.avi")
+
 Documentation - library
 =======================
 
