@@ -13,7 +13,7 @@ The library is capable of driving a VFD display like shown below.
 
 
 ![datasheet](doc/images/lc75710_hacked_display.jpg?raw=true "lc75710_hacked_display.jpg")
-![datasheet](doc/images/lc75710_fft_display.avi?raw=true "lc75710_fft_display.avi")
+![datasheet](doc/images/lc75710_fft_display.png?raw=true "lc75710_fft_display.png")
 
 Documentation - library
 =======================
