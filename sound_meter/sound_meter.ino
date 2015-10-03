@@ -1,6 +1,6 @@
 //#define LOG_OUT 1 // use the log output function
 #define LIN_OUT8 1
-#define FFT_N 256 // set to 256 point fft
+#define FFT_N 128 // set to 128 point fft
 
 #include <FFT.h>
 //#include <ffft.h>
@@ -59,7 +59,7 @@ The principle behind these numbers is the following:
 #define DUTY_OFFSET         (uint8_t)((1100.0f / (float)POWER_VCC) * (float)DUTY_MAX)
 */
 
-const uint8_t LED_DUTY_TABLE[NUM_YELLOW_LED] = { 60, 75, 90, 101, 113, 124, 136, 147, 164, 173, 185, 200 };  /**< Lookup table for the duty cycles */
+const uint8_t LED_DUTY_TABLE[NUM_YELLOW_LED] = { 60, 77, 90, 101, 113, 124, 136, 147, 164, 173, 185, 200 };  /**< Lookup table for the duty cycles */
 const uint8_t EXTRA_LED_PINS[NUM_RED_LED] = { 2, 3, 4, 6, 7 };                                                /**< Assigned pins for the extra LEDs */
 
 /* ADC constants */
@@ -257,6 +257,11 @@ void setup()
 
 }
 
+        int16_t audioget_getspl(float voltnow, float voltref, float dbref) {
+        	int16_t ret = (20 * log10(voltnow/voltref)) +  dbref;
+	  return ret;
+        }
+
 /* APP: main loop */
 void loop()
 {
@@ -280,33 +285,63 @@ void loop()
       }
       
       /* Serial */
-        Serial.begin(57600);
-      establishContact();
+        Serial.begin(115200);
+//      establishContact();
 
       break;
     case STATE_OPERATIONAL:
-    
+
       int k;
+      int magnitud = 0;
+      int16_t getval = 0;
+      static double retval = 0;
       if (samples == (FFT_N*2))
       {
-    
+
         fft_window(); // window the data for better frequency response
         fft_reorder(); // reorder the data before doing the fft
         fft_run(); // process the data in the fft
         //fft_mag_log(); // take the output of the fft
         fft_mag_lin8();
         /* reset samples and restart the process */
-        
+
         for (byte i = 0; i < FFT_N/2; i++)
         {
-          //Serial.write((uint8_t)((fft_lin_out[i] / 65534.0f) * 255.0f));
-          Serial.write(fft_lin_out8[i]);
+            magnitud += fft_lin_out8[i];
         }
+
+	magnitud = magnitud*2;
+	getval = sqrt(magnitud);
+
+	//appy rms offset
+	getval += -2;
+
+#define AUGIOGET_TWFALPHA 0.652
+#define AUGIOGET_TWSALPHA 0.956
+	//time-weight filter
+//	#if AUGIOGET_TW == AUGIOGET_TWF
+//		retval = AUGIOGET_TWFALPHA*retval+(1-AUGIOGET_TWFALPHA)*getval;
+//	#elif AUGIOGET_TW == AUGIOGET_TWS
+		retval = AUGIOGET_TWSALPHA*retval+(1-AUGIOGET_TWSALPHA)*getval;
+//	#endif
+          //Serial.write((uint8_t)((fft_lin_out[i] / 65534.0f) * 255.0f));
+          //Serial.write(fft_lin_out8[i]);
+        
 //        Serial.println(samples, DEC);
         //set_led(spektrum[52]/4);
-    
+        
+        // INPUT hardware setup ----------------
+        //define voltage reference and spl db reference
+        #define AUDIOGET_VOLTREF 4.7 //0.000315//0.000315
+        #define AUDIOGET_DBREF 32
+        
+        uint16_t spl = audioget_getspl(retval, AUDIOGET_VOLTREF, AUDIOGET_DBREF);
+Serial.println(retval, DEC);
+Serial.println(spl, DEC);
+        set_level(retval);
+
         samples = 0;
-    
+
       }
     
       break;

@@ -121,33 +121,30 @@ void display_show_bars(uint8_t bar, uint8_t level)
     lc75710_dcram_write(bar%11, level%7);
 }
 
-void ma_gui_init(t_menu* menu, t_keypad* keypad, t_menu_entry* start_page)
+void ma_gui_init(t_menu* menu, t_keypad* keypad, t_menu_page* start_page)
 {
 
-  uint8_t i = 0;
-  
-  Serial.begin(9600);
-  lc75710_init();
-  
-  /* Init keypad */
-  keypad->pins[BUTTON_UP] = 7;
-  keypad->pins[BUTTON_DOWN] = 8;
-  keypad->pins[BUTTON_SELECT] = 9;
-  
-  for (i = 0; i < NUM_BUTTONS; i++)
-  {
-      pinMode(keypad->pins[i], OUTPUT);
-      keypad->buttons[i]  = false;
-      keypad->latches[i]  = false;
-      keypad->debounce[i] = millis();
-  }
-  
-  /* First selected page: audio sources */
-  menu->page          = start_page;
-  menu->page_previous = start_page;
-  menu->index         = 0;
+    uint8_t i = 0;
 
-  ma_gui_menu_update(menu);
+    /* Init keypad */
+    keypad->pins[BUTTON_UP] = 7;
+    keypad->pins[BUTTON_DOWN] = 8;
+    keypad->pins[BUTTON_SELECT] = 9;
+    
+    for (i = 0; i < NUM_BUTTONS; i++)
+    {
+        pinMode(keypad->pins[i], OUTPUT);
+        keypad->buttons[i]  = false;
+        keypad->latches[i]  = false;
+        keypad->debounce[i] = millis();
+    }
+
+    /* First selected page: audio sources */
+    menu->page            = start_page;
+    menu->page->page_previous = NULL;
+    menu->index           = 0;
+  
+    ma_gui_menu_update(menu);
 
 }
 
@@ -193,7 +190,7 @@ void keypad_read()
 void ma_gui_menu_update(t_menu* menu)
 {
     display_clear(10);
-    display_string_center(menu->page[menu->index].label);
+    display_string_center(menu->page->entries[menu->index].label);
 }
 
 void ma_gui_menu(t_menu* menu)
@@ -203,9 +200,9 @@ void ma_gui_menu(t_menu* menu)
     bool inhibit_up;
     bool inhibit_down;
     bool refresh = false;
-    t_menu_entry* page_next = NULL;
+    t_menu_page* page_next = NULL;
 
-    while (menu->page[i].label != MENU_END_ENTRY)
+    while (menu->page->entries[i].label != MENU_END_ENTRY)
     {
         i++;
     }
@@ -226,9 +223,9 @@ void ma_gui_menu(t_menu* menu)
     }
     else if (keypad.buttons[BUTTON_SELECT])
     {
-        if (menu->page[menu->index].cb != NULL)
+        if (menu->page->entries[menu->index].cb != NULL)
         {
-            page_next = menu->page[menu->index].cb(menu->index, menu->page);
+            page_next = menu->page->entries[menu->index].cb(menu->index, menu->page);
         }
     }
     else
@@ -238,17 +235,22 @@ void ma_gui_menu(t_menu* menu)
     
     if (page_next != NULL)
     {
-        menu->page_previous = menu->page;
+        //page_next->page_previous = menu->page;
         menu->page = page_next;
         menu->index = 0;
+        
+        /* call the pre function */
+        if (menu->page->pre != NULL)
+            menu->page->pre();
+        
         refresh = true;
     }
     
     if (refresh == true)
     {
         ma_gui_menu_update(menu);
-        if (menu->page[menu->index].cb_hoover != NULL)
-            page_next = menu->page[menu->index].cb_hoover(menu->index, menu->page);
+        if (menu->page->entries[menu->index].cb_hoover != NULL)
+            page_next = menu->page->entries[menu->index].cb_hoover(menu->index, menu->page);
     }
 
 }

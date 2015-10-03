@@ -11,19 +11,31 @@
 struct menu_entry_
 {
 
-    char*          label;
-    struct menu_entry_* (*cb)(uint8_t id, struct menu_entry_* page);
-    struct menu_entry_* (*cb_hoover)(uint8_t id, struct menu_entry_* page);
+    char*               label;
+    struct menu_page_* (*cb)(uint8_t id, struct menu_page_* page);
+    struct menu_page_* (*cb_hoover)(uint8_t id, struct menu_page_* page);
 
 };
 
 typedef struct menu_entry_ t_menu_entry;
 
+/** Structure that holds information about a menu page */
+struct menu_page_
+{
+
+    void (*pre)(void);          /**< Pointer to a function that is called when the menu page is first shown */
+    t_menu_entry* entries;      /**< Menu entries */
+    void (*post)(void);         /**< Pointer to a function that is called when the menu page is quit (back to another menu / shutdown) */
+    menu_page_* page_previous;  /**< Pointer to the previous page */
+
+};
+
+typedef struct menu_page_ t_menu_page;
+
 typedef struct
 {
     uint8_t index;
-    t_menu_entry* page;
-    t_menu_entry* page_previous;
+    t_menu_page* page;
 } t_menu;
 
 enum e_buttons_
@@ -39,10 +51,12 @@ enum e_buttons_
 
 typedef struct
 {
+
     uint8_t  pins[NUM_BUTTONS];
     bool     buttons[NUM_BUTTONS];
     int      debounce[NUM_BUTTONS];
     bool     latches[NUM_BUTTONS];
+
 } t_keypad;
 
 
