@@ -1,0 +1,8 @@
+
+HD47780 compatible display 16x1 characters
+==========================================
+
+Nothing much to say: HD47780 compatible interface!
+Pinout is 100% compatible, it does NOT however have the last 2 backlight pins
+
+Note: to make it work with the PCF8574 I/O expander, pull-up resistor are mandatory

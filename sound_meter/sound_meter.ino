@@ -116,6 +116,10 @@ Nice job!
 
 */
 
+/* RC-simulation filter values (time-weighted) */
+#define AUGIOGET_TWFALPHA 0.652
+#define AUGIOGET_TWSALPHA 0.956
+
 /*
 define weighting gain table, must cointain AUDIOGET_SAMPLES/2 elements
 define A-Weighting (Real and Imaginary part)
@@ -222,26 +226,41 @@ int samples = 0;
 double spectrum[FFT_N / 2 + 1] = {0};  /* !you <<dirty>> initializer! */
 
 uint16_t analogVal = 0;
-uint32_t timestamp;
+bool toggle;
+uint8_t discard_samples = 0;
 /* ADC: conversion complete interrupt routine */
 ISR(ADC_vect)
 {
-
+  
   int k;  /* temporary variable */
 
-  /* 45 --> sampling here happens at 77kHz, hence we need to slow the process down skiping 45us of samples which correspond to about 22kHz */
-  if ((micros() - timestamp < 45) || (samples == FFT_N))
+  /* DEBUG: place here the pin toggling to understand the ADC sample frequency */
+  discard_samples++;
+
+// with this trick we have a period of about 55 us (total 112us) -> frequency of 8.94kHz (SWITCHED!) so about 18khz which is perfect for us
+
+  if (discard_samples < 3)
   {
-      /* Update timestamp */
-      timestamp = micros();
-      /* wait for the app to process the data */
+      /* discard samples to achieve a sampling frequency of about 18kHz */
       goto adc_return;
       /* Kids, this is a GOTO statement! */
   }
-  else
+  
+  discard_samples = 0;
+  
+  if (samples >= FFT_N)
   {
-      /* Go on! */
+      /* enough samples have been collected. Waiting for the logic to complete the calculations etc */
+      goto adc_return;
+      /* Kids, this is a GOTO statement! */
   }
+
+  toggle ^= 1;
+
+  if (toggle == 1)
+    PORTB |= 1 << PB5;
+  else
+    PORTB &= ~(1 << PB5);
 
   /* ADC input value (0 - 1023)
      Watch out! The reading sequence of the register is important!
@@ -280,51 +299,44 @@ void io_setup()
     {
         pinMode(EXTRA_LED_PINS[i], OUTPUT);
     }
+    
+    /* Increase PWM frequency to avoid noise and auto-oscillation of the preamp stage!
+       Thanks to Julian who helped me to analyze the problem !
+     */
+     pinMode(13, OUTPUT);
+    
 }
 
 void adc_setup()
 {
-    /* disable interrupts */
-    cli();
 
-    /* set up the ADC */
-    ADCSRA &= ~PS_128;  /* remove bits set by Arduino library */
-
-    /* clear ADLAR in ADMUX (0x7C) to right-adjust the result */
+   /* clear ADLAR in ADMUX (0x7C) to right-adjust the result */
     /* ADCL will contain lower 8 bits, ADCH upper 2 (in last two bits) */
-    ADMUX &= B11011111;
-
-    /* Set REFS1..0 in ADMUX (0x7C) to change reference voltage to the internal 1.1V reference */
-    ADMUX |= B11000000;
-
+    /* Set REFS1..0 in ADMUX to change reference voltage */
     /* Clear MUX3..0 in ADMUX (0x7C) in preparation for setting the analog channel */
-    ADMUX &= B11110000;
+    ADMUX &= ~((1 << ADLAR) | (1 << REFS1) | (1 << REFS0) | (1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0));
 
-    /* Set MUX3..0 in ADMUX to read from AD0 */
-    ADMUX |= 0;  // actually pretty much a NOP, kept just for reference...
+    /* 5V reference (Vcc) */
+    ADMUX |= (1 << REFS0);
+
+    /* Arduino library messes up the register: clean it first */
+    ADCSRA = 0;
 
     /* Set ADEN in ADCSRA (0x7A) to enable the ADC.
        Note, this instruction takes 12 ADC clocks to execute
      */
     ADCSRA |= (1 << ADEN);
 
-    /* un-set ADATE in ADCSRA to disable auto-triggering */
-    ADCSRA &= (1 << ADATE);
- 
-    /* Clear ADTS2..0 in ADCSRB (0x7B) to set trigger mode to free running.
-     This means that as soon as an ADC has finished, the next will be
-     immediately started.
-     */
-    ADCSRB &= B11111000;
+    /* Disable Free Running Mode */
+//    ADCSRA &= ~(1 << ADFR0);
 
-    // Set the Prescaler to 64 (16000KHz/64 = 250KHz (that is a sampling freq of ~19khz)
-    ADCSRA |= PS_16;
-
-    /* Set ADIE in ADCSRA to enable the ADC interrupt */
-    ADCSRA |= (1 << ADIE);
-
-    /* enable interrupts */
-    sei();
+    /* Set the Prescaler to 32 */
+    ADCSRA |= (1 << ADPS2) | (0 << ADPS1) | (0 << ADPS0) |
+              /* Set ADIE in ADCSRA (0x7A) to enable the ADC interrupt. */
+              (1 << ADIE);
+              
+    /* Kickstart the process */
+    ADCSRA |= (1 << ADSC);
 
 }
 
@@ -332,6 +344,9 @@ void adc_setup()
 void setup()
 {
 
+    /* Serial interface (UART) */
+    Serial.begin(115200);
+  
     /* I/O pins setup */
     io_setup();
 
@@ -349,10 +364,10 @@ void setup()
         }
 
 /* APP: main loop */
+uint8_t app_state = STATE_PREOPERATIONAL;
 void loop()
 {
 
-  static uint8_t app_state = STATE_PREOPERATIONAL;
   static int i = 0;
 
   /* Simple State Machine to keep application state */
@@ -367,16 +382,19 @@ void loop()
 
       i++;
 
-      delay(100);
+      delay(50);
 
       if (i > 17)
       {
           app_state = STATE_OPERATIONAL;
+          set_level(0);
       }
 
       break;
 
     case STATE_OPERATIONAL:
+
+      //break;
 
       int k;
       double magnitud = 0;
@@ -393,6 +411,8 @@ void loop()
         fft_run();
         /* reset samples and restart the process */        
         fft_mag_lin();
+
+//audioget_doweighting(fft_lin_out);
 
         for (uint8_t i = 0; i < FFT_N/2; i++)
         {
@@ -416,17 +436,17 @@ void loop()
 	//appy rms offset
 	//getval += -2;
 
-#define AUGIOGET_TWFALPHA 0.652
-#define AUGIOGET_TWSALPHA 0.956
+
 	/* time-weight filter (RC filter) */
 	retval = AUGIOGET_TWSALPHA * retval + (1 - AUGIOGET_TWSALPHA) * magnitud;
         
         //define voltage reference and spl db reference
-        #define AUDIOGET_VOLTREF 0.000315
-        #define AUDIOGET_DBREF 32
+        #define AUDIOGET_VOLTREF 0.150
+        #define AUDIOGET_DBREF 34
         
         uint16_t spl = audioget_getspl(retval, AUDIOGET_VOLTREF, AUDIOGET_DBREF);
-        set_level(9 - retval);
+        Serial.println(spl, DEC);
+        set_level(spl - 52);
 
         cli();  /* disable interrupts */
 
@@ -434,7 +454,6 @@ void loop()
 
         /* Reset samples */
         samples = 0;
-        timestamp = micros();
 
         sei();  /* enable interrupts */
 

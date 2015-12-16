@@ -1,0 +1,16 @@
+ 
+This LCD has the following pinout:
+
+VCC (5V)
+GND
+WR
+DAT
+CS
+
+And after trial and error, this happens to be a (a clone of?) the
+HT162x lcd controller series.
+
+There are 16 7 segments digits plus some miscellaneous icons right below.
+
+No accurate mapping has been discovered yet tough
+(setting a bit at a time could be an effective way to find a pattern).
