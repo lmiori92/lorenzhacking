@@ -313,7 +313,7 @@ void arm_logic(uint32_t timestamp)
                 movement_open(&arm_config.rotation, &arm_rotation);
             }
 
-            if (movement_done == true)
+            if ((movement_done == true) && (rot_movement_done == true))
             {
                 /* boot phase completed */
                 state = ARM_WAIT_BUTTON;
@@ -425,8 +425,8 @@ void keypad_periodic(t_keypad* keypad, uint32_t timestamp)
 void eeprom_read_position(uint8_t address, uint8_t *prev_position)
 {
     *prev_position = EEPROM.read(address);
-    Serial.print("EEPROM READ: ");
-    Serial.print(*prev_position, DEC);
+//    Serial.print("EEPROM READ: ");
+//    Serial.print(*prev_position, DEC);
     if (*prev_position > 180)
     {
         *prev_position = 0;
@@ -442,11 +442,11 @@ void eeprom_write_position(uint8_t address, uint8_t position, uint8_t *prev_posi
     int16_t diff = position - *prev_position;
     diff = abs(diff);
 
-    if (diff > 5U)
+    if (diff > 10U)
     {
         /* Movement done, write position */
-        Serial.print("EEPROM WRITTEN: ");
-        Serial.print(position, DEC);
+//        Serial.print("EEPROM WRITTEN: ");
+//        Serial.print(position, DEC);
         EEPROM.write(address, position);
         *prev_position = position;
     }
