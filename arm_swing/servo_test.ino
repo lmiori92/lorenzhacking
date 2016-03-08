@@ -43,6 +43,7 @@
 #define BUTTON_START_PIN    7U             /**< Button start PIN [#] */
 #define DEBOUNCE_BUTTONS    100U * 1000U   /**< Button debounce time [us] */
 
+/**< Enumerations for the logic state machine */
 typedef enum
 {
 
@@ -142,10 +143,37 @@ void movement_open(t_rotation_movement *config, t_servo_movement *movement);
 void keypad_periodic(t_keypad* keypad, uint32_t timestamp);
 void eeprom_write_position(uint8_t address, uint8_t position, uint8_t *prev_position);
 void servo_set_position(t_servo_movement *servo, uint8_t pos);
+bool timer_run(bool reset, uint32_t *timestamp, uint32_t *start, uint32_t timer);
 
 /************************/
 /*      FUNCTIONS       */
 /************************/
+
+bool timer_run(bool reset, uint32_t *timestamp, uint32_t *start, uint32_t timer)
+{
+
+    bool elapsed = false;
+    
+    if (reset == true)
+    {
+        /* reset the timer for a new firing */
+        *start = 0;
+        elapsed = true;
+    }
+    else if (*start == 0U)
+    {
+        /* start the timer */
+        *start = *timestamp;
+    }
+    else if (*timestamp >= (*start + timer))
+    {
+        /* elapsed! */
+        elapsed = true;
+    }
+ 
+    return elapsed;
+
+}
 
 void servo_set_position(t_servo_movement *servo, uint8_t pos)
 {
@@ -179,6 +207,7 @@ bool servo_movement(t_servo_movement *movement, uint32_t timestamp)
 
         if (movement->angle_position <= movement->angle_end)
         {
+            /* movement completed */
             movement_end = true;
             movement->angle_position = movement->angle_end;
             movement->start = 0;
@@ -198,6 +227,7 @@ bool servo_movement(t_servo_movement *movement, uint32_t timestamp)
 
         if (movement->angle_position >= movement->angle_end)
         {
+            /* movement completed */
             movement_end = true;
             movement->angle_position = movement->angle_end;
             movement->start = 0;
@@ -255,27 +285,25 @@ void movement_open(t_rotation_movement *config, t_servo_movement *movement)
 void arm_logic(uint32_t timestamp)
 {
 
-    static uint32_t old_timestamp = 0;
-    uint32_t elapsed = 0;
-    bool movement_done = false;
+    bool elapsed;
+    bool swing_movement_done = false;
     bool rot_movement_done = false;
     bool first_cycle = false;
     static e_arm_state state = ARM_STARTUP;
     static e_arm_state old_state = ARM_NONE;
     static uint8_t prev_pos_swing = 0;
     static uint8_t prev_pos_rot = 0;
+    static uint32_t timer_start = 0;
+    static uint32_t timer = 0;
 
-    /* measure elapsed time */
-    elapsed = timestamp - old_timestamp;
-    old_timestamp = timestamp;
+    /* general purpouse timer */
+    elapsed = timer_run(timer == 0 ? true : false, &timestamp, &timer_start, timer);
+    if (elapsed == false) return;
+    else timer = 0;
 
     /* ramp up-down the movement */
-    movement_done = servo_movement(&arm_swing, timestamp);
+    swing_movement_done = servo_movement(&arm_swing, timestamp);
     rot_movement_done = servo_movement(&arm_rotation, timestamp);
-
-    /* operate the servo */
-    arm_swing_servo.write(arm_swing.angle_position);
-    arm_rotation_servo.write(arm_rotation.angle_position);
 
     /* write position history when neeeded */
     if (state != ARM_STARTUP)
@@ -286,7 +314,7 @@ void arm_logic(uint32_t timestamp)
     
     if (old_state != state)
     {
-        movement_done = false;
+        swing_movement_done = false;
         rot_movement_done = false;
         first_cycle = true;
     }
@@ -313,7 +341,7 @@ void arm_logic(uint32_t timestamp)
                 movement_open(&arm_config.rotation, &arm_rotation);
             }
 
-            if ((movement_done == true) && (rot_movement_done == true))
+            if ((swing_movement_done == true) && (rot_movement_done == true))
             {
                 /* boot phase completed */
                 state = ARM_WAIT_BUTTON;
@@ -327,18 +355,21 @@ void arm_logic(uint32_t timestamp)
             {
                 /* Start pressed */
                 state = ARM_CLOSE;
+                timer = 500000;
             }
             break;
         case ARM_RELEASE_FULL:
             /* Open the hand */
+            /* TODO */
             break;
         case ARM_CLOSE:
             /* Close the arm */
             movement_close(&arm_config.swing, &arm_swing);
-            if (movement_done == true)
+            if (swing_movement_done == true)
             {
                 /* movement completed, go to next state */
                 state = ARM_ROTATE;
+                timer = 500000;
             }
             break;
         case ARM_ROTATE:
@@ -348,10 +379,12 @@ void arm_logic(uint32_t timestamp)
             {
                 /* movement completed, go to next state */
                 state = ARM_ROTATE_BACK;
+                timer = 500000;
             }
             break;
         case ARM_GRAB:
             /* Close the hand */
+            /* TODO */
             break;
         case ARM_ROTATE_BACK:
             movement_open(&arm_config.rotation, &arm_rotation);
@@ -359,12 +392,13 @@ void arm_logic(uint32_t timestamp)
             {
                 /* movement completed, go to next state */
                 state = ARM_OPEN;
+                timer = 500000;
             }
             break;
         case ARM_OPEN:
-            /*  */
+            /* Reopen the arm swing */
             movement_open(&arm_config.swing, &arm_swing);
-            if (movement_done == true)
+            if (swing_movement_done == true)
             {
                 /* movement completed, go to next state */
                 state = ARM_WAIT_BUTTON;
@@ -425,8 +459,6 @@ void keypad_periodic(t_keypad* keypad, uint32_t timestamp)
 void eeprom_read_position(uint8_t address, uint8_t *prev_position)
 {
     *prev_position = EEPROM.read(address);
-//    Serial.print("EEPROM READ: ");
-//    Serial.print(*prev_position, DEC);
     if (*prev_position > 180)
     {
         *prev_position = 0;
@@ -442,11 +474,9 @@ void eeprom_write_position(uint8_t address, uint8_t position, uint8_t *prev_posi
     int16_t diff = position - *prev_position;
     diff = abs(diff);
 
-    if (diff > 10U)
+    if (diff > 5U)
     {
         /* Movement done, write position */
-//        Serial.print("EEPROM WRITTEN: ");
-//        Serial.print(position, DEC);
         EEPROM.write(address, position);
         *prev_position = position;
     }
@@ -483,6 +513,13 @@ void loop()
 
     /* execute the main logic */
     arm_logic(ts);
+    
+    /* output processing */
+
+    /* operate the servo */
+    arm_swing_servo.write(arm_swing.angle_position);
+    arm_rotation_servo.write(arm_rotation.angle_position);
+
 }
 
 
